@@ -1,4 +1,5 @@
 require('dotenv').config();
+
 const {
   Client,
   GatewayIntentBits,
@@ -7,14 +8,16 @@ const {
   SlashCommandBuilder
 } = require('discord.js');
 
+const math = require('mathjs');
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
 const token = process.env.TOKEN;
-const clientId = '1493486475201740930';
+const clientId = 'YOUR_CLIENT_ID'; // <-- replace this
 
-// ---- Commands ----
+// ---------------- COMMANDS ----------------
 const commands = [
   new SlashCommandBuilder()
     .setName('offline')
@@ -32,47 +35,78 @@ const commands = [
       option.setName('user')
         .setDescription('User to message')
         .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('calc')
+    .setDescription('Full scientific calculator')
+    .addStringOption(option =>
+      option.setName('expression')
+        .setDescription('Example: sqrt(16) + 2^3')
+        .setRequired(true)
     )
+
 ].map(cmd => cmd.toJSON());
 
-// ---- Register commands ----
+// ---------------- REGISTER COMMANDS ----------------
 const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
-  await rest.put(
-    Routes.applicationCommands(clientId),
-    { body: commands }
-  );
-  console.log('Commands registered');
+  try {
+    await rest.put(
+      Routes.applicationCommands(clientId),
+      { body: commands }
+    );
+    console.log('Commands registered');
+  } catch (err) {
+    console.error(err);
+  }
 })();
 
-// ---- Ready ----
-client.once('ready', () => {
+// ---------------- READY ----------------
+client.once('clientReady', () => {
   console.log(`Spo0kNet is online as ${client.user.tag}`);
 });
 
-// ---- Command handler ----
+// ---------------- COMMAND HANDLER ----------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const user = interaction.options.getUser('user');
+  // -------- OFFLINE / BUSY --------
+  if (interaction.commandName === 'offline' || interaction.commandName === 'busy') {
+    const user = interaction.options.getUser('user');
 
-  let message = '';
+    const message =
+      interaction.commandName === 'offline'
+        ? "I'm offline right now, I'll reply later."
+        : "I'm busy right now, talk later.";
 
-  if (interaction.commandName === 'offline') {
-    message = "I'm offline right now, I'll reply later.";
+    try {
+      await user.send(message);
+      await interaction.reply({ content: 'Sent ✅', ephemeral: true });
+    } catch {
+      await interaction.reply({ content: 'Could not DM user ❌', ephemeral: true });
+    }
   }
 
-  if (interaction.commandName === 'busy') {
-    message = "I'm busy right now, talk later.";
-  }
+  // -------- CALCULATOR --------
+  if (interaction.commandName === 'calc') {
+    const expr = interaction.options.getString('expression');
 
-  try {
-    await user.send(message);
-    await interaction.reply({ content: 'Sent ✅', ephemeral: true });
-  } catch {
-    await interaction.reply({ content: 'Could not DM user ❌', ephemeral: true });
+    try {
+      const result = math.format(math.evaluate(expr), { precision: 14 });
+
+      await interaction.reply({
+        content: `🧮 **${expr} = ${result}**`
+      });
+
+    } catch (err) {
+      await interaction.reply({
+        content: `Invalid expression ❌`
+      });
+    }
   }
 });
 
+// ---------------- LOGIN ----------------
 client.login(token);

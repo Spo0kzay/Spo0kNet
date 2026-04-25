@@ -210,22 +210,20 @@ client.on('interactionCreate', async interaction => {
 
   // ---------- TYPE ----------
   if (interaction.commandName === 'type') {
-    const msg = interaction.options.getString('message');
+  const msg = interaction.options.getString('message');
 
-    try {
-      await interaction.channel.send(msg);
+  try {
+    await interaction.reply({
+      content: msg
+    });
 
-      // silent confirm
-      await interaction.deferReply({ ephemeral: true });
-      await interaction.deleteReply();
-
-    } catch {
-      await interaction.reply({
-        content: '❌ Failed to send',
-        ephemeral: true
-      });
-    }
+  } catch {
+    await interaction.reply({
+      content: '❌ Failed to send',
+      flags: 64 // ephemeral
+    });
   }
+}
 });
 
 // ---------------- LOGIN ----------------

@@ -102,6 +102,15 @@ client.once('clientReady', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
+  const OWNER_ID = '1492311096193847499';
+
+if (interaction.user.id !== OWNER_ID) {
+  return interaction.reply({
+    content: "❌ You don’t have permission to use this bot",
+    ephemeral: true
+  });
+}
+
   // ---------- HELP ----------
   if (interaction.commandName === 'help') {
     return interaction.reply({

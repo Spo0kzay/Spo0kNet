@@ -13,8 +13,7 @@ const math = require('mathjs');
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.GuildMessages
   ]
 });
 
@@ -22,9 +21,11 @@ const token = process.env.TOKEN;
 const clientId = '1493486475201740930';
 
 // ---------------- STORAGE ----------------
-const userSettings = new Map();      // rounding
-const mentionTracking = new Map();  // on/off
-const mentionLogs = new Map();      // stored mentions
+const userSettings = new Map();
+const mentionTracking = new Map();
+const mentionLogs = new Map();
+
+const OWNER_ID = '1492311096193847499';
 
 // ---------------- COMMANDS ----------------
 const commands = [
@@ -75,7 +76,23 @@ const commands = [
           { name: 'on', value: 'on' },
           { name: 'off', value: 'off' }
         )
+    ),
+
+  // 🔥 NEW TYPE COMMAND
+  new SlashCommandBuilder()
+    .setName('type')
+    .setDescription('Send a message through the bot')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('Message to send')
+        .setRequired(true)
     )
+    .addChannelOption(option =>
+      option.setName('channel')
+        .setDescription('Channel to send in')
+        .setRequired(false)
+    )
+
 ].map(cmd => cmd.toJSON());
 
 // ---------------- REGISTER ----------------
@@ -102,14 +119,13 @@ client.once('clientReady', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  const OWNER_ID = '1492311096193847499';
-
-if (interaction.user.id !== OWNER_ID) {
-  return interaction.reply({
-    content: "❌ You don’t have permission to use this bot",
-    ephemeral: true
-  });
-}
+  // 🔒 OWNER CHECK
+  if (interaction.user.id !== OWNER_ID) {
+    return interaction.reply({
+      content: "❌ You don’t have permission to use this bot",
+      ephemeral: true
+    });
+  }
 
   // ---------- HELP ----------
   if (interaction.commandName === 'help') {
@@ -118,17 +134,10 @@ if (interaction.user.id !== OWNER_ID) {
 `📘 **Spo0kNet Commands**
 
 🧮 /calc <expression>
-→ Advanced calculator
-Example: \`/calc sqrt(16)+2^3\`
-
 ⚙️ /settings rounding:<number>
-→ Set decimal precision
-
-⏰ /reminder time:<10m> message:<text>
-→ Get reminded later
-
+⏰ /reminder time:<time> message:<text>
 🔔 /mentiontrack on/off
-→ Track mentions while offline`
+💬 /type message:<text> [channel]`
     });
   }
 
@@ -138,7 +147,6 @@ Example: \`/calc sqrt(16)+2^3\`
 
     try {
       const settings = userSettings.get(interaction.user.id) || { rounding: 6 };
-
       const raw = math.evaluate(expr);
 
       if (!isFinite(raw)) {
@@ -215,6 +223,29 @@ Try:
       content: `🔔 Mention tracking ${state}`
     });
   }
+
+  // ---------- TYPE ----------
+  if (interaction.commandName === 'type') {
+    const msg = interaction.options.getString('message');
+    const channel = interaction.options.getChannel('channel') || interaction.channel;
+
+    const formatted = msg.trim().replace(/\s+/g, ' ');
+
+    try {
+      await channel.send(formatted);
+
+      return interaction.reply({
+        content: '✅ Sent',
+        ephemeral: true
+      });
+
+    } catch {
+      return interaction.reply({
+        content: '❌ Failed to send',
+        ephemeral: true
+      });
+    }
+  }
 });
 
 // ---------------- TRACK MENTIONS ----------------
@@ -255,7 +286,6 @@ client.on('presenceUpdate', (oldP, newP) => {
     });
 
     user.send(text).catch(() => {});
-
     mentionLogs.delete(newP.userId);
   }
 });

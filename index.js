@@ -11,21 +11,17 @@ const {
 const math = require('mathjs');
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
 
 const token = process.env.TOKEN;
 const clientId = '1493486475201740930';
+const OWNER_ID = '1492311096193847499';
 
 // ---------------- STORAGE ----------------
 const userSettings = new Map();
 const mentionTracking = new Map();
 const mentionLogs = new Map();
-
-const OWNER_ID = '1492311096193847499';
 
 // ---------------- COMMANDS ----------------
 const commands = [
@@ -78,19 +74,14 @@ const commands = [
         )
     ),
 
-  // 🔥 NEW TYPE COMMAND
+  // 🔥 YOUR COMMAND
   new SlashCommandBuilder()
     .setName('type')
-    .setDescription('Send a message through the bot')
+    .setDescription('Send a custom message')
     .addStringOption(option =>
       option.setName('message')
-        .setDescription('Message to send')
+        .setDescription('What you want the bot to say')
         .setRequired(true)
-    )
-    .addChannelOption(option =>
-      option.setName('channel')
-        .setDescription('Channel to send in')
-        .setRequired(false)
     )
 
 ].map(cmd => cmd.toJSON());
@@ -104,7 +95,7 @@ const rest = new REST({ version: '10' }).setToken(token);
       Routes.applicationCommands(clientId),
       { body: commands }
     );
-    console.log('Commands registered');
+    console.log('Commands registered globally');
   } catch (err) {
     console.error(err);
   }
@@ -112,17 +103,17 @@ const rest = new REST({ version: '10' }).setToken(token);
 
 // ---------------- READY ----------------
 client.once('clientReady', () => {
-  console.log(`Spo0kNet is online as ${client.user.tag}`);
+  console.log(`Spo0kNet online as ${client.user.tag}`);
 });
 
 // ---------------- INTERACTIONS ----------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // 🔒 OWNER CHECK
+  // 🔒 OWNER ONLY
   if (interaction.user.id !== OWNER_ID) {
     return interaction.reply({
-      content: "❌ You don’t have permission to use this bot",
+      content: "❌ You don’t have permission",
       ephemeral: true
     });
   }
@@ -131,13 +122,13 @@ client.on('interactionCreate', async interaction => {
   if (interaction.commandName === 'help') {
     return interaction.reply({
       content:
-`📘 **Spo0kNet Commands**
+`📘 Commands
 
 🧮 /calc <expression>
 ⚙️ /settings rounding:<number>
 ⏰ /reminder time:<time> message:<text>
 🔔 /mentiontrack on/off
-💬 /type message:<text> [channel]`
+💬 /type message:<text>`
     });
   }
 
@@ -150,7 +141,7 @@ client.on('interactionCreate', async interaction => {
       const raw = math.evaluate(expr);
 
       if (!isFinite(raw)) {
-        return interaction.reply({ content: '❌ Invalid math result' });
+        return interaction.reply({ content: '❌ Invalid result' });
       }
 
       const result = math.format(raw, {
@@ -163,14 +154,7 @@ client.on('interactionCreate', async interaction => {
 
     } catch {
       return interaction.reply({
-        content:
-`❌ Invalid expression
-
-Try:
-• 2+2*5
-• sqrt(16)
-• sin(pi/2)
-• 5!`
+        content: '❌ Invalid expression'
       });
     }
   }
@@ -181,7 +165,7 @@ Try:
 
     if (rounding < 1 || rounding > 15) {
       return interaction.reply({
-        content: '❌ Rounding must be between 1 and 15'
+        content: '❌ Rounding must be 1–15'
       });
     }
 
@@ -203,10 +187,10 @@ Try:
       time.endsWith('h') ? parseInt(time) * 3600000 : null;
 
     if (!ms) {
-      return interaction.reply({ content: '❌ Invalid time format (use s/m/h)' });
+      return interaction.reply({ content: '❌ Invalid time (use s/m/h)' });
     }
 
-    await interaction.reply({ content: `⏰ Reminder set!` });
+    await interaction.reply({ content: '⏰ Reminder set!' });
 
     setTimeout(() => {
       interaction.user.send(`⏰ Reminder: ${message}`).catch(() => {});
@@ -227,66 +211,20 @@ Try:
   // ---------- TYPE ----------
   if (interaction.commandName === 'type') {
     const msg = interaction.options.getString('message');
-    const channel = interaction.options.getChannel('channel') || interaction.channel;
-
-    const formatted = msg.trim().replace(/\s+/g, ' ');
 
     try {
-      await channel.send(formatted);
+      await interaction.channel.send(msg);
 
-      return interaction.reply({
-        content: '✅ Sent',
-        ephemeral: true
-      });
+      // silent confirm
+      await interaction.deferReply({ ephemeral: true });
+      await interaction.deleteReply();
 
     } catch {
-      return interaction.reply({
+      await interaction.reply({
         content: '❌ Failed to send',
         ephemeral: true
       });
     }
-  }
-});
-
-// ---------------- TRACK MENTIONS ----------------
-client.on('messageCreate', message => {
-  if (message.author.bot) return;
-
-  message.mentions.users.forEach(user => {
-    if (!mentionTracking.get(user.id)) return;
-
-    if (user.presence?.status === 'offline') {
-      if (!mentionLogs.has(user.id)) {
-        mentionLogs.set(user.id, []);
-      }
-
-      mentionLogs.get(user.id).push({
-        author: message.author.tag,
-        content: message.content
-      });
-    }
-  });
-});
-
-// ---------------- PRESENCE UPDATE ----------------
-client.on('presenceUpdate', (oldP, newP) => {
-  if (!oldP || !newP) return;
-
-  if (oldP.status === 'offline' && newP.status !== 'offline') {
-    const logs = mentionLogs.get(newP.userId);
-
-    if (!logs || logs.length === 0) return;
-
-    const user = client.users.cache.get(newP.userId);
-
-    let text = '🔔 While you were offline:\n\n';
-
-    logs.forEach(m => {
-      text += `• ${m.author}: ${m.content}\n`;
-    });
-
-    user.send(text).catch(() => {});
-    mentionLogs.delete(newP.userId);
   }
 });
 

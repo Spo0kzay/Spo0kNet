@@ -14,8 +14,7 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildPresences
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -23,30 +22,28 @@ const token = process.env.TOKEN;
 const clientId = '1493486475201740930';
 
 // ✅ USERS
-const MAIN_USER = '1492311096193847499'; // you
+const MAIN_USER = '1492311096193847499';
 const ALLOWED_USERS = [
   MAIN_USER,
-  '1460205888575897795' // tester
+  '1460205888575897795'
 ];
 
 // ---------------- STORAGE ----------------
 const userSettings = new Map();
-const mentionTracking = new Map();
-const mentionLogs = new Map();
 
-let autoReplyEnabled = false;
-let autoReplyMessage = "I’m offline right now.";
+let afkEnabled = false;
+let afkMessage = "I’m currently AFK, I’ll reply later.";
 
 // ---------------- COMMANDS ----------------
 const commands = [
 
   new SlashCommandBuilder()
     .setName('help')
-    .setDescription('Show commands'),
+    .setDescription('Show all commands'),
 
   new SlashCommandBuilder()
     .setName('type')
-    .setDescription('Send your custom message')
+    .setDescription('Send a custom message')
     .addStringOption(o =>
       o.setName('message')
         .setDescription('Message to send')
@@ -54,17 +51,49 @@ const commands = [
     ),
 
   new SlashCommandBuilder()
+    .setName('dm')
+    .setDescription('Send a DM')
+    .addUserOption(o =>
+      o.setName('user')
+        .setDescription('User to DM')
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName('message')
+        .setDescription('Message to send')
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName('afk')
+    .setDescription('Toggle AFK auto reply')
+    .addStringOption(o =>
+      o.setName('state')
+        .setDescription('on or off')
+        .setRequired(true)
+        .addChoices(
+          { name: 'on', value: 'on' },
+          { name: 'off', value: 'off' }
+        )
+    )
+    .addStringOption(o =>
+      o.setName('message')
+        .setDescription('Custom AFK message')
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
     .setName('calc')
-    .setDescription('Calculator')
+    .setDescription('Advanced calculator')
     .addStringOption(o =>
       o.setName('expression')
-        .setDescription('Math expression')
+        .setDescription('Example: sqrt(16)+2^3')
         .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('settings')
-    .setDescription('Set rounding')
+    .setDescription('Set calculator rounding')
     .addIntegerOption(o =>
       o.setName('rounding')
         .setDescription('Decimal places (1-15)')
@@ -73,7 +102,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('reminder')
-    .setDescription('Set reminder')
+    .setDescription('Set a reminder')
     .addStringOption(o =>
       o.setName('time')
         .setDescription('Time (10s, 5m, 1h)')
@@ -81,39 +110,8 @@ const commands = [
     )
     .addStringOption(o =>
       o.setName('message')
-        .setDescription('Reminder text')
+        .setDescription('Reminder message')
         .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName('mentiontrack')
-    .setDescription('Track mentions while offline')
-    .addStringOption(o =>
-      o.setName('state')
-        .setDescription('on or off')
-        .setRequired(true)
-        .addChoices(
-          { name: 'on', value: 'on' },
-          { name: 'off', value: 'off' }
-        )
-    ),
-
-  new SlashCommandBuilder()
-    .setName('autoreply')
-    .setDescription('Auto reply when mentioned')
-    .addStringOption(o =>
-      o.setName('state')
-        .setDescription('on or off')
-        .setRequired(true)
-        .addChoices(
-          { name: 'on', value: 'on' },
-          { name: 'off', value: 'off' }
-        )
-    )
-    .addStringOption(o =>
-      o.setName('message')
-        .setDescription('Custom reply message')
-        .setRequired(false)
     )
 
 ].map(c => c.toJSON());
@@ -142,7 +140,6 @@ client.once('clientReady', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // ✅ ALLOWED USERS CHECK
   if (!ALLOWED_USERS.includes(interaction.user.id)) {
     return interaction.reply({ content: '❌ No permission', flags: 64 });
   }
@@ -152,19 +149,43 @@ client.on('interactionCreate', async interaction => {
     return interaction.reply({
       content:
 `/type <msg>
+/dm <user> <msg>
+/afk on/off
 /calc <math>
 /settings rounding
-/reminder
-/mentiontrack on/off
-/autoreply on/off`,
+/reminder`,
       flags: 64
     });
   }
 
-  // TYPE
+  // TYPE (like reminder style)
   if (interaction.commandName === 'type') {
     const msg = interaction.options.getString('message');
     return interaction.reply({ content: msg });
+  }
+
+  // DM
+  if (interaction.commandName === 'dm') {
+    const user = interaction.options.getUser('user');
+    const msg = interaction.options.getString('message');
+
+    try {
+      await user.send(msg);
+      return interaction.reply({ content: '✅ DM sent', flags: 64 });
+    } catch {
+      return interaction.reply({ content: '❌ Cannot DM user', flags: 64 });
+    }
+  }
+
+  // AFK
+  if (interaction.commandName === 'afk') {
+    const state = interaction.options.getString('state');
+    const msg = interaction.options.getString('message');
+
+    afkEnabled = state === 'on';
+    if (msg) afkMessage = msg;
+
+    return interaction.reply({ content: `AFK ${state}`, flags: 64 });
   }
 
   // CALC
@@ -179,7 +200,7 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: `${result}` });
 
     } catch {
-      return interaction.reply({ content: 'Invalid', flags: 64 });
+      return interaction.reply({ content: 'Invalid expression', flags: 64 });
     }
   }
 
@@ -188,7 +209,7 @@ client.on('interactionCreate', async interaction => {
     const r = interaction.options.getInteger('rounding');
 
     if (r < 1 || r > 15) {
-      return interaction.reply({ content: '1-15 only', flags: 64 });
+      return interaction.reply({ content: '1–15 only', flags: 64 });
     }
 
     userSettings.set(interaction.user.id, { rounding: r });
@@ -214,49 +235,22 @@ client.on('interactionCreate', async interaction => {
       interaction.user.send(`⏰ ${m}`).catch(()=>{});
     }, ms);
   }
-
-  // MENTION TRACK
-  if (interaction.commandName === 'mentiontrack') {
-    const state = interaction.options.getString('state');
-    mentionTracking.set(MAIN_USER, state === 'on');
-
-    return interaction.reply({ content: `Tracking ${state}`, flags: 64 });
-  }
-
-  // AUTOREPLY
-  if (interaction.commandName === 'autoreply') {
-    const state = interaction.options.getString('state');
-    const msg = interaction.options.getString('message');
-
-    autoReplyEnabled = state === 'on';
-    if (msg) autoReplyMessage = msg;
-
-    return interaction.reply({ content: `Auto reply ${state}`, flags: 64 });
-  }
 });
 
-// ---------------- MESSAGE LISTENER ----------------
+// ---------------- AFK AUTO REPLY ----------------
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  if (message.mentions.users.has(MAIN_USER)) {
+  if (!message.mentions.users.has(MAIN_USER)) return;
+  if (!afkEnabled) return;
 
-    // mention tracking
-    if (mentionTracking.get(MAIN_USER)) {
-      if (!mentionLogs.has(MAIN_USER)) mentionLogs.set(MAIN_USER, []);
+  const delay = Math.floor(Math.random() * 4000) + 2000;
 
-      mentionLogs.get(MAIN_USER).push(
-        `${message.author.tag}: ${message.content}`
-      );
-    }
-
-    // auto reply
-    if (autoReplyEnabled) {
-      try {
-        await message.reply(autoReplyMessage);
-      } catch {}
-    }
-  }
+  setTimeout(async () => {
+    try {
+      await message.reply(afkMessage);
+    } catch {}
+  }, delay);
 });
 
 // ---------------- LOGIN ----------------

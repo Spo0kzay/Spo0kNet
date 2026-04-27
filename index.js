@@ -14,8 +14,8 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildPresences,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildPresences
   ]
 });
 
@@ -29,48 +29,62 @@ const mentionTracking = new Map();
 const mentionLogs = new Map();
 
 let autoReplyEnabled = false;
-let autoReplyMessage = "I’m offline right now, I’ll reply later.";
+let autoReplyMessage = "I’m offline right now.";
 
 // ---------------- COMMANDS ----------------
 const commands = [
-  new SlashCommandBuilder().setName('help').setDescription('Show commands'),
+
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Show commands'),
 
   new SlashCommandBuilder()
     .setName('type')
-    .setDescription('Send a custom message')
+    .setDescription('Send your custom message')
     .addStringOption(o =>
-      o.setName('message').setDescription('Text').setRequired(true)
+      o.setName('message')
+        .setDescription('Message to send')
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('calc')
     .setDescription('Calculator')
     .addStringOption(o =>
-      o.setName('expression').setDescription('Math').setRequired(true)
+      o.setName('expression')
+        .setDescription('Math expression')
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('settings')
     .setDescription('Set rounding')
     .addIntegerOption(o =>
-      o.setName('rounding').setRequired(true)
+      o.setName('rounding')
+        .setDescription('Decimal places (1-15)')
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('reminder')
     .setDescription('Set reminder')
     .addStringOption(o =>
-      o.setName('time').setRequired(true)
+      o.setName('time')
+        .setDescription('Time (10s, 5m, 1h)')
+        .setRequired(true)
     )
     .addStringOption(o =>
-      o.setName('message').setRequired(true)
+      o.setName('message')
+        .setDescription('Reminder text')
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName('mentiontrack')
-    .setDescription('Track mentions')
+    .setDescription('Track mentions while offline')
     .addStringOption(o =>
       o.setName('state')
+        .setDescription('Turn on or off')
         .setRequired(true)
         .addChoices(
           { name: 'on', value: 'on' },
@@ -80,9 +94,10 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName('autoreply')
-    .setDescription('Auto reply system')
+    .setDescription('Auto reply when mentioned')
     .addStringOption(o =>
       o.setName('state')
+        .setDescription('on or off')
         .setRequired(true)
         .addChoices(
           { name: 'on', value: 'on' },
@@ -91,7 +106,7 @@ const commands = [
     )
     .addStringOption(o =>
       o.setName('message')
-        .setDescription('Custom message')
+        .setDescription('Custom reply message')
         .setRequired(false)
     )
 
@@ -101,8 +116,15 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(token);
 
 (async () => {
-  await rest.put(Routes.applicationCommands(clientId), { body: commands });
-  console.log('Commands registered');
+  try {
+    await rest.put(
+      Routes.applicationCommands(clientId),
+      { body: commands }
+    );
+    console.log('Commands registered');
+  } catch (err) {
+    console.error(err);
+  }
 })();
 
 // ---------------- READY ----------------
@@ -110,7 +132,7 @@ client.once('clientReady', () => {
   console.log(`Online as ${client.user.tag}`);
 });
 
-// ---------------- COMMAND HANDLER ----------------
+// ---------------- INTERACTIONS ----------------
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -132,7 +154,7 @@ client.on('interactionCreate', async interaction => {
     });
   }
 
-  // TYPE (like reminder message)
+  // TYPE (your custom message)
   if (interaction.commandName === 'type') {
     const msg = interaction.options.getString('message');
     return interaction.reply({ content: msg });
@@ -143,7 +165,7 @@ client.on('interactionCreate', async interaction => {
     const expr = interaction.options.getString('expression');
 
     try {
-      const s = userSettings.get(interaction.user.id) || { rounding: 6 };
+      const s = userSettings.get(OWNER_ID) || { rounding: 6 };
       const raw = math.evaluate(expr);
       const result = math.format(raw, { precision: s.rounding });
 
@@ -157,7 +179,12 @@ client.on('interactionCreate', async interaction => {
   // SETTINGS
   if (interaction.commandName === 'settings') {
     const r = interaction.options.getInteger('rounding');
-    userSettings.set(interaction.user.id, { rounding: r });
+
+    if (r < 1 || r > 15) {
+      return interaction.reply({ content: '1-15 only', flags: 64 });
+    }
+
+    userSettings.set(OWNER_ID, { rounding: r });
     return interaction.reply({ content: `Rounding: ${r}`, flags: 64 });
   }
 
@@ -173,14 +200,14 @@ client.on('interactionCreate', async interaction => {
 
     if (!ms) return interaction.reply({ content: 'Invalid time', flags: 64 });
 
-    interaction.reply({ content: 'Reminder set!' });
+    await interaction.reply({ content: 'Reminder set!' });
 
     setTimeout(() => {
-      interaction.user.send(m).catch(()=>{});
+      interaction.user.send(`⏰ ${m}`).catch(()=>{});
     }, ms);
   }
 
-  // MENTION TRACK TOGGLE
+  // MENTION TRACK
   if (interaction.commandName === 'mentiontrack') {
     const state = interaction.options.getString('state');
     mentionTracking.set(OWNER_ID, state === 'on');
@@ -204,7 +231,7 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // MENTION TRACK (works now)
+  // track mentions
   if (message.mentions.users.has(OWNER_ID)) {
     if (mentionTracking.get(OWNER_ID)) {
       if (!mentionLogs.has(OWNER_ID)) mentionLogs.set(OWNER_ID, []);
@@ -213,26 +240,14 @@ client.on('messageCreate', async message => {
         `${message.author.tag}: ${message.content}`
       );
     }
+
+    // auto reply
+    if (autoReplyEnabled) {
+      try {
+        await message.reply(autoReplyMessage);
+      } catch {}
+    }
   }
-
-  // AUTO REPLY (only when others mention you)
-  if (autoReplyEnabled && message.mentions.users.has(OWNER_ID)) {
-    try {
-      await message.reply(autoReplyMessage);
-    } catch {}
-  }
-});
-
-// ---------------- READY CHECK FOR MENTIONS ----------------
-client.once('ready', async () => {
-  const logs = mentionLogs.get(OWNER_ID);
-  if (!logs || logs.length === 0) return;
-
-  const user = await client.users.fetch(OWNER_ID);
-
-  user.send("While you were gone:\n\n" + logs.join('\n')).catch(()=>{});
-
-  mentionLogs.delete(OWNER_ID);
 });
 
 // ---------------- LOGIN ----------------

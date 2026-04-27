@@ -21,7 +21,13 @@ const client = new Client({
 
 const token = process.env.TOKEN;
 const clientId = '1493486475201740930';
-const OWNER_ID = '1492311096193847499';
+
+// ✅ USERS
+const MAIN_USER = '1492311096193847499'; // you
+const ALLOWED_USERS = [
+  MAIN_USER,
+  '1460205888575897795' // tester
+];
 
 // ---------------- STORAGE ----------------
 const userSettings = new Map();
@@ -84,7 +90,7 @@ const commands = [
     .setDescription('Track mentions while offline')
     .addStringOption(o =>
       o.setName('state')
-        .setDescription('Turn on or off')
+        .setDescription('on or off')
         .setRequired(true)
         .addChoices(
           { name: 'on', value: 'on' },
@@ -136,8 +142,9 @@ client.once('clientReady', () => {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.user.id !== OWNER_ID) {
-    return interaction.reply({ content: 'No permission', flags: 64 });
+  // ✅ ALLOWED USERS CHECK
+  if (!ALLOWED_USERS.includes(interaction.user.id)) {
+    return interaction.reply({ content: '❌ No permission', flags: 64 });
   }
 
   // HELP
@@ -154,7 +161,7 @@ client.on('interactionCreate', async interaction => {
     });
   }
 
-  // TYPE (your custom message)
+  // TYPE
   if (interaction.commandName === 'type') {
     const msg = interaction.options.getString('message');
     return interaction.reply({ content: msg });
@@ -165,7 +172,7 @@ client.on('interactionCreate', async interaction => {
     const expr = interaction.options.getString('expression');
 
     try {
-      const s = userSettings.get(OWNER_ID) || { rounding: 6 };
+      const s = userSettings.get(interaction.user.id) || { rounding: 6 };
       const raw = math.evaluate(expr);
       const result = math.format(raw, { precision: s.rounding });
 
@@ -184,7 +191,8 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ content: '1-15 only', flags: 64 });
     }
 
-    userSettings.set(OWNER_ID, { rounding: r });
+    userSettings.set(interaction.user.id, { rounding: r });
+
     return interaction.reply({ content: `Rounding: ${r}`, flags: 64 });
   }
 
@@ -210,7 +218,7 @@ client.on('interactionCreate', async interaction => {
   // MENTION TRACK
   if (interaction.commandName === 'mentiontrack') {
     const state = interaction.options.getString('state');
-    mentionTracking.set(OWNER_ID, state === 'on');
+    mentionTracking.set(MAIN_USER, state === 'on');
 
     return interaction.reply({ content: `Tracking ${state}`, flags: 64 });
   }
@@ -231,12 +239,13 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
 
-  // track mentions
-  if (message.mentions.users.has(OWNER_ID)) {
-    if (mentionTracking.get(OWNER_ID)) {
-      if (!mentionLogs.has(OWNER_ID)) mentionLogs.set(OWNER_ID, []);
+  if (message.mentions.users.has(MAIN_USER)) {
 
-      mentionLogs.get(OWNER_ID).push(
+    // mention tracking
+    if (mentionTracking.get(MAIN_USER)) {
+      if (!mentionLogs.has(MAIN_USER)) mentionLogs.set(MAIN_USER, []);
+
+      mentionLogs.get(MAIN_USER).push(
         `${message.author.tag}: ${message.content}`
       );
     }
